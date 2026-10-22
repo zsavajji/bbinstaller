@@ -3,17 +3,17 @@
 #include <QDragEnterEvent>
 #include <QFileDialog>
 #include <QGridLayout>
-#include <QGuiApplication>
+#include <QGroupBox>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMimeData>
 #include <QPainter>
+#include <QPainterPath>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QSslSocket>
 #include <QStyle>
-#include <QStyleHints>
 #include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -37,34 +37,56 @@ protected:
 
 QString mb(qint64 n) { return QString::number(n / 1e6, 'f', 1) + QStringLiteral(" MB"); }
 
-// Re-evaluate [property=...] selectors after a property change
-void setStyleProperty(QWidget *w, const char *name, const QVariant &value)
+bool isDark(const QPalette &p) { return p.color(QPalette::Window).lightness() < 128; }
+QColor mutedColor(const QPalette &p) { return p.color(QPalette::PlaceholderText); }
+QColor okColor(const QPalette &p) { return isDark(p) ? QColor(0x66bb6a) : QColor(0x2e7d32); }
+QColor errColor(const QPalette &p) { return isDark(p) ? QColor(0xef5350) : QColor(0xc62828); }
+
+// Secondary text: the platform's smaller size
+void makeSmall(QWidget *w)
 {
-    w->setProperty(name, value);
-    w->style()->unpolish(w);
-    w->style()->polish(w);
+    QFont f = w->font();
+    f.setPointSizeF(f.pointSizeF() * 0.85);
+    w->setFont(f);
 }
 
-bool systemIsDark()
+// tone: "muted", "ok", "err", or empty for normal text
+void setTone(QLabel *l, const QString &tone)
 {
-#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
-    const Qt::ColorScheme scheme = QGuiApplication::styleHints()->colorScheme();
-    if (scheme != Qt::ColorScheme::Unknown) return scheme == Qt::ColorScheme::Dark;
-#endif
-    return QGuiApplication::palette().color(QPalette::Window).lightness() < 128;
+    l->setProperty("tone", tone);
+    const QPalette base = l->parentWidget() ? l->parentWidget()->palette() : QPalette();
+    QPalette p = l->palette();
+    p.setColor(QPalette::WindowText, tone == QLatin1String("muted") ? mutedColor(base)
+                                     : tone == QLatin1String("ok")  ? okColor(base)
+                                     : tone == QLatin1String("err") ? errColor(base)
+                                                                    : base.color(QPalette::WindowText));
+    l->setPalette(p);
 }
 
 } // namespace
 
 DropArea::DropArea(QWidget *parent) : QFrame(parent)
 {
-    setObjectName(QStringLiteral("drop"));
     setAcceptDrops(true);
 }
 
 void DropArea::setHighlighted(bool on)
 {
-    if (property("over").toBool() != on) setStyleProperty(this, "over", on);
+    if (m_highlighted == on) return;
+    m_highlighted = on;
+    update();
+}
+
+void DropArea::paintEvent(QPaintEvent *)
+{
+    QPainter p(this);
+    p.setRenderHint(QPainter::Antialiasing);
+    QPainterPath path;
+    path.addRoundedRect(QRectF(rect()).adjusted(1, 1, -1, -1), 8, 8);
+    p.fillPath(path, palette().color(QPalette::Base));
+    QPen pen(m_highlighted ? palette().color(QPalette::Highlight) : palette().color(QPalette::Mid), m_highlighted ? 2 : 1.5, Qt::DashLine);
+    p.setPen(pen);
+    p.drawPath(path);
 }
 
 void DropArea::dragEnterEvent(QDragEnterEvent *e)
@@ -89,31 +111,84 @@ void DropArea::dropEvent(QDropEvent *e)
     emit filesDropped(paths);
 }
 
+AddTarget::AddTarget(QWidget *parent) : QWidget(parent)
+{
+    setCursor(Qt::PointingHandCursor);
+    setMinimumHeight(48);
+    setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+}
+
+void AddTarget::setText(const QString &text)
+{
+    m_text = text;
+    update();
+}
+
+void AddTarget::paintEvent(QPaintEvent *)
+{
+    QPainter p(this);
+    p.setPen(m_hover ? palette().color(QPalette::Highlight) : mutedColor(palette()));
+    p.drawText(rect(), Qt::AlignCenter | Qt::TextWordWrap, m_text);
+}
+
+void AddTarget::enterEvent(QEnterEvent *)
+{
+    m_hover = true;
+    update();
+    if (onHover) onHover(true);
+}
+
+void AddTarget::leaveEvent(QEvent *)
+{
+    m_hover = false;
+    update();
+    if (onHover) onHover(false);
+}
+
+void AddTarget::mouseReleaseEvent(QMouseEvent *e)
+{
+    if (e->button() == Qt::LeftButton && rect().contains(e->position().toPoint()) && onClicked) onClicked();
+}
+
+StatusDot::StatusDot(QWidget *parent) : QWidget(parent)
+{
+    setFixedSize(10, 10);
+}
+
+void StatusDot::setOn(bool on)
+{
+    m_on = on;
+    update();
+}
+
+void StatusDot::paintEvent(QPaintEvent *)
+{
+    QPainter p(this);
+    p.setRenderHint(QPainter::Antialiasing);
+    p.setPen(Qt::NoPen);
+    p.setBrush(m_on ? okColor(palette()) : mutedColor(palette()));
+    p.drawEllipse(rect());
+}
+
 MainWindow::MainWindow()
 {
-    setObjectName(QStringLiteral("root"));
     setWindowTitle(QStringLiteral("BB Installer"));
     resize(520, 560);
     setMinimumSize(420, 420);
 
     auto *body = new QVBoxLayout(this);
-    body->setContentsMargins(20, 20, 20, 20);
-    body->setSpacing(14);
 
-    m_deviceCard = new QFrame;
-    m_deviceCard->setObjectName(QStringLiteral("device"));
+    m_deviceCard = new QGroupBox;
     auto *deviceRow = new QHBoxLayout(m_deviceCard);
-    deviceRow->setContentsMargins(14, 12, 14, 12);
-    deviceRow->setSpacing(10);
-    m_dot = new QLabel;
-    m_dot->setObjectName(QStringLiteral("dot"));
-    m_dot->setFixedSize(10, 10);
+    m_dot = new StatusDot;
     auto *deviceText = new QVBoxLayout;
     deviceText->setSpacing(0);
     m_model = new QLabel;
-    m_model->setObjectName(QStringLiteral("model"));
+    QFont bold = m_model->font();
+    bold.setBold(true);
+    m_model->setFont(bold);
     m_detail = new QLabel;
-    m_detail->setProperty("role", QStringLiteral("small"));
+    makeSmall(m_detail);
     deviceText->addWidget(m_model);
     deviceText->addWidget(m_detail);
     deviceRow->addWidget(m_dot);
@@ -127,51 +202,47 @@ MainWindow::MainWindow()
     auto *scroll = new QScrollArea;
     scroll->setWidgetResizable(true);
     scroll->setFrameShape(QFrame::NoFrame);
+    scroll->viewport()->setAutoFillBackground(false);
     auto *content = new QWidget;
-    content->setObjectName(QStringLiteral("list"));
+    content->setAutoFillBackground(false);
     m_list = new QVBoxLayout(content);
     m_list->setContentsMargins(8, 8, 8, 8);
     m_list->setSpacing(6);
-    m_add = new QPushButton;
-    m_add->setObjectName(QStringLiteral("add"));
-    m_add->setCursor(Qt::PointingHandCursor);
-    m_add->setMinimumHeight(48);
-    m_add->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    m_add = new AddTarget;
     QSizePolicy keep = m_add->sizePolicy();
     keep.setRetainSizeWhenHidden(true);
     m_add->setSizePolicy(keep);
-    m_add->installEventFilter(this);
     m_list->addWidget(m_add, 1);
     scroll->setWidget(content);
     dropLayout->addWidget(scroll);
     body->addWidget(m_drop, 1);
 
     auto *actions = new QHBoxLayout;
-    actions->setSpacing(10);
     m_password = new QLineEdit;
     m_password->setEchoMode(QLineEdit::Password);
     m_password->setPlaceholderText(QStringLiteral("Device password (if set)"));
     m_install = new QPushButton(QStringLiteral("Install"));
     m_install->setObjectName(QStringLiteral("install"));
-    m_install->setCursor(Qt::PointingHandCursor);
+    m_install->setDefault(true);
     actions->addWidget(m_password, 1);
     actions->addWidget(m_install);
     body->addLayout(actions);
 
     m_status = new QLabel;
-    m_status->setObjectName(QStringLiteral("status"));
     m_status->setWordWrap(true);
     m_status->setTextInteractionFlags(Qt::TextSelectableByMouse);
     m_status->hide();
     body->addWidget(m_status);
 
-    connect(m_add, &QPushButton::clicked, this, [this] {
+    m_add->onClicked = [this] {
         if (m_busy) return;
         const QStringList files = QFileDialog::getOpenFileNames(this, QString(), QString(), QStringLiteral("BlackBerry apps (*.bar)"));
         QList<bb::BarInfo> infos;
         for (const QString &f : files) infos << bb::barInfo(f);
         add(infos);
-    });
+    };
+    // The whole empty part of the drop area is the click target; light the border up with it
+    m_add->onHover = [this](bool on) { m_drop->setHighlighted(on && !m_busy); };
     connect(m_drop, &DropArea::filesDropped, this, [this](const QStringList &paths) {
         if (m_busy) return;
         QList<bb::BarInfo> infos;
@@ -181,72 +252,27 @@ MainWindow::MainWindow()
     connect(m_password, &QLineEdit::textChanged, this, &MainWindow::refresh);
     connect(m_password, &QLineEdit::returnPressed, m_install, &QPushButton::click);
     connect(m_install, &QPushButton::clicked, this, &MainWindow::install);
-#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
-    connect(QGuiApplication::styleHints(), &QStyleHints::colorSchemeChanged, this, &MainWindow::applyTheme);
-#endif
 
-    applyTheme();
+    setTone(m_detail, QStringLiteral("muted"));
+    setTone(m_status, QStringLiteral("muted"));
     refresh();
     if (!QSslSocket::supportsSsl())
         setStatus(QStringLiteral("TLS support is missing (OpenSSL libraries not found), so the phone can't be reached."), true);
     QTimer::singleShot(0, this, &MainWindow::poll);
 }
 
-void MainWindow::applyTheme()
-{
-    m_dark = systemIsDark();
-    struct Palette { const char *bg, *panel, *text, *muted, *line, *accent, *ok, *err; };
-    const Palette c = m_dark ? Palette{"#18181a", "#222225", "#ececea", "#9a9a96", "#36363a", "#4c8dff", "#66bb6a", "#ef5350"}
-                             : Palette{"#f6f6f4", "#ffffff", "#1d1d1b", "#6b6b66", "#dcdcd6", "#1f6feb", "#2e7d32", "#c62828"};
-    // Stand-in for CSS opacity: .45 on a disabled Install button
-    const auto fade = [&](const char *fg) {
-        const QColor a(fg), b(c.bg);
-        return QColor::fromRgbF(a.redF() * .45 + b.redF() * .55, a.greenF() * .45 + b.greenF() * .55, a.blueF() * .45 + b.blueF() * .55).name();
-    };
-    setStyleSheet(QStringLiteral(R"(
-        QWidget { font-size: 14px; }
-        QWidget#root { background: %1; color: %3; }
-        QLabel { color: %3; background: transparent; }
-        QLabel[role="small"] { color: %4; font-size: 12px; }
-        QLabel[role="small"][state="bad"] { color: %8; }
-        QLabel[role="small"][state="done"] { color: %7; }
-        QLabel[role="ver"] { color: %4; }
-        QLabel#model { font-weight: bold; }
-        QFrame#device { background: %2; border: 1px solid %5; border-radius: 10px; }
-        QLabel#dot { background: %4; border-radius: 5px; }
-        QLabel#dot[on="true"] { background: %7; }
-        QFrame#drop { background: %2; border: 2px dashed %5; border-radius: 10px; }
-        QFrame#drop[over="true"] { border-color: %6; }
-        QScrollArea, QWidget#list { background: transparent; border: 0; }
-        QPushButton#add { background: transparent; border: 0; color: %4; }
-        QPushButton#add:hover { color: %6; }
-        QFrame[role="bar"] { border: 1px solid %5; border-radius: 8px; background: transparent; }
-        QToolButton[role="remove"] { border: 0; background: transparent; color: %4; font-size: 16px; padding: 0 4px; }
-        QProgressBar { border: 0; border-radius: 3px; background: %5; max-height: 6px; min-height: 6px; }
-        QProgressBar::chunk { background: %6; border-radius: 3px; }
-        QLineEdit { padding: 9px 12px; border-radius: 8px; border: 1px solid %5; background: %2; color: %3; }
-        QLineEdit:disabled { color: %4; }
-        QPushButton#install { padding: 9px 12px; border-radius: 8px; border: 1px solid %6; background: %6; color: #fff; font-weight: 600; }
-        QPushButton#install:disabled { border-color: %9; background: %9; color: %10; }
-        QLabel#status { color: %4; }
-        QLabel#status[err="true"] { color: %8; }
-    )")
-                      .arg(c.bg, c.panel, c.text, c.muted, c.line, c.accent, c.ok, c.err, fade(c.accent))
-                      .arg(fade("#ffffff")));
-}
-
-bool MainWindow::eventFilter(QObject *o, QEvent *e)
-{
-    // The whole empty part of the drop area is the "add" button; light the border up with it
-    if (o == m_add && (e->type() == QEvent::Enter || e->type() == QEvent::Leave))
-        m_drop->setHighlighted(e->type() == QEvent::Enter && !m_busy);
-    return QWidget::eventFilter(o, e);
-}
-
+// Light/dark switches change the palette: recolour the labels that have a tone
 void MainWindow::changeEvent(QEvent *e)
 {
-    if (e->type() == QEvent::ApplicationPaletteChange && systemIsDark() != m_dark) applyTheme();
+    if (e->type() == QEvent::PaletteChange || e->type() == QEvent::ApplicationPaletteChange || e->type() == QEvent::StyleChange)
+        QTimer::singleShot(0, this, &MainWindow::applyColors);
     QWidget::changeEvent(e);
+}
+
+void MainWindow::applyColors()
+{
+    for (QLabel *l : findChildren<QLabel *>())
+        if (l->property("tone").isValid()) setTone(l, l->property("tone").toString());
 }
 
 QList<MainWindow::Bar *> MainWindow::valid() const
@@ -261,13 +287,13 @@ void MainWindow::setStatus(const QString &text, bool error)
 {
     m_status->setText(text);
     m_status->setVisible(!text.isEmpty());
-    setStyleProperty(m_status, "err", error);
+    setTone(m_status, error ? QStringLiteral("err") : QStringLiteral("muted"));
 }
 
 void MainWindow::refresh()
 {
     const bb::DeviceInfo *d = m_device ? &m_device->info() : nullptr;
-    setStyleProperty(m_dot, "on", d != nullptr);
+    m_dot->setOn(d != nullptr);
     m_model->setText(d ? d->model : QStringLiteral("No phone connected"));
     if (d) {
         QStringList parts;
@@ -309,35 +335,34 @@ void MainWindow::add(const QList<bb::BarInfo> &infos)
         auto bar = std::make_unique<Bar>();
         bar->info = info;
         bar->el = new QFrame;
-        bar->el->setProperty("role", QStringLiteral("bar"));
+        bar->el->setFrameShape(QFrame::StyledPanel);
         auto *grid = new QGridLayout(bar->el);
-        grid->setContentsMargins(10, 8, 10, 8);
+        grid->setContentsMargins(10, 8, 6, 8);
         grid->setHorizontalSpacing(10);
         grid->setVerticalSpacing(4);
         auto *name = new ElidedLabel(info.name);
-        name->setProperty("role", QStringLiteral("name"));
         name->setToolTip(info.path);
-        auto *ver = new QLabel(info.version);
-        ver->setProperty("role", QStringLiteral("ver"));
+        bar->version = new QLabel(info.version);
         auto *remove = new QToolButton;
-        remove->setText(QStringLiteral("×"));
+        remove->setIcon(style()->standardIcon(QStyle::SP_LineEditClearButton));
+        remove->setAutoRaise(true);
         remove->setToolTip(QStringLiteral("Remove"));
-        remove->setProperty("role", QStringLiteral("remove"));
-        remove->setCursor(Qt::PointingHandCursor);
         bar->detail = new QLabel(info.error.isEmpty() ? mb(info.size) : info.error);
-        bar->detail->setProperty("role", QStringLiteral("small"));
-        bar->detail->setProperty("state", info.error.isEmpty() ? QString() : QStringLiteral("bad"));
         bar->detail->setWordWrap(true);
+        makeSmall(bar->detail);
         bar->progress = new QProgressBar;
         bar->progress->setRange(0, 100);
         bar->progress->setTextVisible(false);
         bar->progress->hide();
         grid->addWidget(name, 0, 0);
-        grid->addWidget(ver, 0, 1);
+        grid->addWidget(bar->version, 0, 1);
         grid->addWidget(remove, 0, 2);
         grid->addWidget(bar->detail, 1, 0, 1, 3);
         grid->addWidget(bar->progress, 2, 0, 1, 3);
         grid->setColumnStretch(0, 1);
+        m_list->insertWidget(m_list->count() - 1, bar->el);
+        setTone(bar->version, QStringLiteral("muted"));
+        setTone(bar->detail, info.error.isEmpty() ? QStringLiteral("muted") : QStringLiteral("err"));
 
         Bar *raw = bar.get();
         connect(remove, &QToolButton::clicked, this, [this, raw] {
@@ -346,7 +371,6 @@ void MainWindow::add(const QList<bb::BarInfo> &infos)
             m_bars.erase(std::find_if(m_bars.begin(), m_bars.end(), [&](const auto &b) { return b.get() == raw; }));
             refresh();
         });
-        m_list->insertWidget(m_list->count() - 1, bar->el);
         m_bars.push_back(std::move(bar));
     }
     refresh();
@@ -374,7 +398,7 @@ void MainWindow::install()
                                                                     : QStringLiteral("Installed"));
             if (p.phase == bb::Progress::Done) {
                 bar->done = true;
-                setStyleProperty(bar->detail, "state", QStringLiteral("done"));
+                setTone(bar->detail, QStringLiteral("ok"));
                 bar->progress->hide();
             }
         });

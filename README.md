@@ -16,6 +16,8 @@ A wrong password is never retried automatically: too many wrong attempts wipe th
 Every push builds a Linux AppImage, a macOS arm64 `.dmg` and a Windows x64 `.zip` with
 GitHub Actions (see the run's *Artifacts*). Pushing a `v*` tag publishes them as a release.
 
+The window uses each platform's own style and follows its light/dark setting.
+
 The macOS build is ad-hoc signed, so the first launch needs right-click → **Open**.
 
 ## Building
