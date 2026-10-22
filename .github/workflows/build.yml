@@ -1,0 +1,115 @@
+name: Build
+
+on:
+  push:
+    branches: [main, qt6]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+env:
+  QT_VERSION: '6.8.3'
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            os: ubuntu-22.04
+          - name: mac-arm64
+            os: macos-14
+          - name: win-x64
+            os: windows-2022
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          cache: true
+          # The phone needs TLS 1.0, which Windows' own TLS (Schannel) refuses: ship OpenSSL
+          tools: ${{ runner.os == 'Windows' && 'tools_opensslv3_x64' || '' }}
+
+      - name: Install Linux packages
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zlib1g-dev libgl1-mesa-dev libfuse2 libxkbcommon-x11-0 libxcb-cursor0 \
+            libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0
+
+      - name: Configure
+        shell: bash
+        run: |
+          VERSION=$(sed -n 's/^project(bbinstaller VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "ARTIFACT=bbinstaller-$VERSION-${{ matrix.name }}" >> "$GITHUB_ENV"
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Test
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Package (Linux AppImage)
+        if: runner.os == 'Linux'
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: 1
+        run: |
+          DESTDIR=AppDir cmake --install build --prefix /usr
+          wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
+          chmod +x linuxdeploy*.AppImage
+          export QMAKE="$QT_ROOT_DIR/bin/qmake" OUTPUT="$ARTIFACT.AppImage"
+          ./linuxdeploy-x86_64.AppImage --appdir AppDir -e AppDir/usr/bin/bbinstaller \
+            -d packaging/bbinstaller.desktop -i packaging/bbinstaller.png --plugin qt --output appimage
+          mkdir dist && mv "$OUTPUT" dist/
+
+      - name: Package (macOS dmg)
+        if: runner.os == 'macOS'
+        run: |
+          macdeployqt "build/BB Installer.app"
+          # Apple silicon refuses unsigned code: ad-hoc sign after macdeployqt rewrote the binaries
+          codesign --force --deep --sign - "build/BB Installer.app"
+          mkdir dist
+          hdiutil create -volname "BB Installer" -srcfolder "build/BB Installer.app" -ov -format UDZO "dist/$ARTIFACT.dmg"
+
+      - name: Package (Windows zip)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $app = "$env:ARTIFACT"
+          New-Item -ItemType Directory $app | Out-Null
+          Copy-Item "build/Release/BB Installer.exe" $app
+          windeployqt --release --no-translations --no-system-d3d-compiler --no-opengl-sw "$app/BB Installer.exe"
+          Copy-Item "$env:IQTA_TOOLS/OpenSSLv3/Win_x64/bin/*.dll" $app
+          New-Item -ItemType Directory dist | Out-Null
+          Compress-Archive -Path $app -DestinationPath "dist/$app.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*

@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=BB Installer
+Comment=Install .bar apps on BlackBerry 10 over USB, no developer mode needed
+Exec=bbinstaller
+Icon=bbinstaller
+Categories=Utility;
