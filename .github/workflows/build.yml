@@ -22,6 +22,10 @@ jobs:
             cmake_args: -DBBINSTALLER_FUSION=ON
           - name: mac-arm64
             os: macos-14
+            cmake_args: -DCMAKE_OSX_ARCHITECTURES=arm64
+          - name: mac-x64
+            os: macos-15-intel
+            cmake_args: -DCMAKE_OSX_ARCHITECTURES=x86_64
           - name: win-x64
             os: windows-2022
     name: ${{ matrix.name }}
@@ -50,7 +54,7 @@ jobs:
           VERSION=$(sed -n 's/^project(bbinstaller VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "ARTIFACT=bbinstaller-$VERSION-${{ matrix.name }}" >> "$GITHUB_ENV"
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64 ${{ matrix.cmake_args }}
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release ${{ matrix.cmake_args }}
 
       - name: Build
         run: cmake --build build --config Release --parallel

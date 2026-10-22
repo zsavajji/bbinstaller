@@ -1,7 +1,7 @@
 # BB Installer
 
 Install `.bar` apps on a BlackBerry 10 phone over USB, no developer mode needed.
-A small Qt 6 app for Windows, macOS (Apple silicon) and Linux. The protocol is ported from
+A small Qt 6 app for Windows, macOS (Apple silicon and Intel) and Linux. The protocol is ported from
 [Sachesi](https://github.com/xsacha/Sachesi)'s `InstallNet`.
 
 1. Plug in the phone with a USB cable. The OS brings up the phone's USB network link
@@ -19,7 +19,8 @@ publishes them as a release.
 | Platform | Package | Look |
 | --- | --- | --- |
 | Windows x64 | `.zip` (OpenSSL included) | Windows style |
-| macOS arm64 | `.dmg` | macOS style |
+| macOS arm64 (Apple silicon) | `.dmg` | macOS style |
+| macOS x64 (Intel) | `.dmg` | macOS style |
 | Ubuntu 22.04 / 24.04, Debian 12 / 13 | `.deb` | Desktop theme (Breeze on KDE) |
 | Fedora 43 / 44 | `.rpm` | Desktop theme (Breeze on KDE) |
 | Any Linux x86_64 | AppImage | Fusion |
