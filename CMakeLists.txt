@@ -5,6 +5,8 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 
+option(BBINSTALLER_FUSION "Always use Qt's Fusion style (for the self-contained AppImage)" OFF)
+
 find_package(Qt6 6.2 REQUIRED COMPONENTS Widgets Network)
 
 # .bar manifests are deflated: use the system zlib, else the copy Qt itself is built with
@@ -30,6 +32,9 @@ qt_add_executable(bbinstaller WIN32 MACOSX_BUNDLE
 )
 target_compile_definitions(bbinstaller PRIVATE BBINSTALLER_VERSION="${PROJECT_VERSION}")
 target_link_libraries(bbinstaller PRIVATE bbcore Qt6::Widgets)
+if(BBINSTALLER_FUSION)
+    target_compile_definitions(bbinstaller PRIVATE BBINSTALLER_FUSION)
+endif()
 if(WIN32 OR APPLE)
     set_target_properties(bbinstaller PROPERTIES OUTPUT_NAME "BB Installer")
 endif()
@@ -41,6 +46,33 @@ set_target_properties(bbinstaller PROPERTIES
 )
 
 install(TARGETS bbinstaller BUNDLE DESTINATION . RUNTIME DESTINATION bin)
+if(UNIX AND NOT APPLE)
+    install(FILES packaging/bbinstaller.desktop DESTINATION share/applications)
+    install(FILES packaging/bbinstaller.png DESTINATION share/icons/hicolor/256x256/apps)
+endif()
+
+# .deb/.rpm against the distro's own Qt, so KDE's Breeze and other system themes apply
+set(CPACK_PACKAGE_NAME bbinstaller)
+set(CPACK_PACKAGE_VENDOR bbinstaller)
+set(CPACK_PACKAGE_CONTACT "zsavajji <zsavajji@users.noreply.github.com>")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Install .bar apps on BlackBerry 10 over USB, no developer mode needed")
+set(CPACK_PACKAGE_HOMEPAGE_URL https://github.com/zsavajji/bbinstaller)
+set(CPACK_PACKAGING_INSTALL_PREFIX /usr)
+set(CPACK_STRIP_FILES ON)
+set(CPACK_DEBIAN_PACKAGE_SECTION utils)
+set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
+# Qt loads OpenSSL and its display plugins at runtime, so nothing links them: name them (t64 on newer releases)
+set(CPACK_DEBIAN_PACKAGE_DEPENDS "libssl3t64 | libssl3, qt6-qpa-plugins")
+set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
+set(CPACK_RPM_PACKAGE_LICENSE GPL-3.0-only)
+set(CPACK_RPM_PACKAGE_GROUP Applications/System)
+set(CPACK_RPM_PACKAGE_REQUIRES openssl-libs)
+set(CPACK_RPM_PACKAGE_AUTOREQ ON)
+set(CPACK_RPM_FILE_NAME RPM-DEFAULT)
+set(CPACK_RPM_EXCLUDE_FROM_AUTO_FILELIST_ADDITION
+    /usr/share/applications /usr/share/icons /usr/share/icons/hicolor /usr/share/icons/hicolor/256x256
+    /usr/share/icons/hicolor/256x256/apps)
+include(CPack)
 
 include(CTest)
 if(BUILD_TESTING)

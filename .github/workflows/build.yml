@@ -16,8 +16,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Self-contained AppImage: bundles Qt, always Fusion
           - name: linux-x86_64
             os: ubuntu-22.04
+            cmake_args: -DBBINSTALLER_FUSION=ON
           - name: mac-arm64
             os: macos-14
           - name: win-x64
@@ -48,7 +50,7 @@ jobs:
           VERSION=$(sed -n 's/^project(bbinstaller VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "ARTIFACT=bbinstaller-$VERSION-${{ matrix.name }}" >> "$GITHUB_ENV"
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64 ${{ matrix.cmake_args }}
 
       - name: Build
         run: cmake --build build --config Release --parallel
@@ -99,9 +101,34 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
+  # .deb/.rpm built against each distro's own Qt, so the desktop's theme (KDE Breeze etc.) applies
+  linux-packages:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { tag: ubuntu22.04, image: 'ubuntu:22.04' }
+          - { tag: ubuntu24.04, image: 'ubuntu:24.04' }
+          - { tag: debian12, image: 'debian:12' }
+          - { tag: debian13, image: 'debian:13' }
+          - { tag: fedora43, image: 'fedora:43' }
+          - { tag: fedora44, image: 'fedora:44' }
+    name: ${{ matrix.tag }}
+    runs-on: ubuntu-latest
+    container: ${{ matrix.image }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build, test and package
+        run: sh packaging/linux-package.sh ${{ matrix.tag }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bbinstaller-${{ matrix.tag }}
+          path: dist/*
+          if-no-files-found: error
+
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
+    needs: [build, linux-packages]
     runs-on: ubuntu-latest
     permissions:
       contents: write

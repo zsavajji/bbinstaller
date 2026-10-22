@@ -13,10 +13,22 @@ A wrong password is never retried automatically: too many wrong attempts wipe th
 
 ## Downloads
 
-Every push builds a Linux AppImage, a macOS arm64 `.dmg` and a Windows x64 `.zip` with
-GitHub Actions (see the run's *Artifacts*). Pushing a `v*` tag publishes them as a release.
+Every push builds these with GitHub Actions (see the run's *Artifacts*). Pushing a `v*` tag
+publishes them as a release.
 
-The window uses each platform's own style and follows its light/dark setting.
+| Platform | Package | Look |
+| --- | --- | --- |
+| Windows x64 | `.zip` (OpenSSL included) | Windows style |
+| macOS arm64 | `.dmg` | macOS style |
+| Ubuntu 22.04 / 24.04, Debian 12 / 13 | `.deb` | Desktop theme (Breeze on KDE) |
+| Fedora 43 / 44 | `.rpm` | Desktop theme (Breeze on KDE) |
+| Any Linux x86_64 | AppImage | Fusion |
+
+The `.deb`/`.rpm` packages use the distro's own Qt, so they pick up the desktop's style and colours.
+The AppImage brings its own Qt and always uses Qt's Fusion style.
+All of them follow the system light/dark setting.
+
+Install a package with `sudo apt install ./bbinstaller-*.deb` or `sudo dnf install ./bbinstaller-*.rpm`.
 
 The macOS build is ad-hoc signed, so the first launch needs right-click → **Open**.
 
@@ -30,6 +42,9 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ctest --test-dir build
 ```
+
+`-DBBINSTALLER_FUSION=ON` forces the Fusion style (used for the AppImage).
+`packaging/linux-package.sh <tag>` builds a `.deb` or `.rpm` inside a Debian/Ubuntu or Fedora system.
 
 The phone only speaks TLS 1.0 with a self-signed certificate. The OpenSSL TLS backend is used
 whenever its libraries are present (on Windows they ship next to the exe). On macOS without

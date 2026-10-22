@@ -2,12 +2,17 @@
 
 #include <QApplication>
 #include <QSslSocket>
+#include <QStyleFactory>
 
 int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
     QApplication::setApplicationName(QStringLiteral("BB Installer"));
     QApplication::setApplicationVersion(QStringLiteral(BBINSTALLER_VERSION));
+#ifdef BBINSTALLER_FUSION
+    // The AppImage carries its own Qt, which can't load the desktop's style plugins (Breeze etc.)
+    QApplication::setStyle(QStyleFactory::create(QStringLiteral("Fusion")));
+#endif
 
     // The phone needs TLS 1.0, which only the OpenSSL backend can still be talked into
     // (Schannel on current Windows refuses it). Must be picked before the first TLS socket.
