@@ -130,17 +130,40 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
+  # A v* tag releases under that tag. A branch push releases v<project version> once:
+  # bump the version in CMakeLists.txt to publish the next one.
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'push'
     needs: [build, linux-packages]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+      - name: Pick the release tag
+        id: tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            tag=$GITHUB_REF_NAME
+          else
+            tag=v$(sed -n 's/^project(bbinstaller VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
+            if gh release view "$tag" >/dev/null 2>&1; then
+              echo "$tag is already released; bump the version in CMakeLists.txt for a new release"
+              tag=
+            fi
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@v4
+        if: steps.tag.outputs.tag != ''
         with:
           path: dist
           merge-multiple: true
       - uses: softprops/action-gh-release@v2
+        if: steps.tag.outputs.tag != ''
         with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: BB Installer ${{ steps.tag.outputs.tag }}
           files: dist/*

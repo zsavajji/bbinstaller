@@ -13,8 +13,9 @@ A wrong password is never retried automatically: too many wrong attempts wipe th
 
 ## Downloads
 
-Every push builds these with GitHub Actions (see the run's *Artifacts*). Pushing a `v*` tag
-publishes them as a release.
+Every push builds these with GitHub Actions (see the run's *Artifacts*). A push to `main` or `qt6`
+publishes them as release `v<version>` the first time that version appears: bump `VERSION` in
+`CMakeLists.txt` to release again. Pushing a `v*` tag also publishes a release.
 
 | Platform | Package | Look |
 | --- | --- | --- |
