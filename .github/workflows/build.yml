@@ -8,8 +8,9 @@ on:
   workflow_dispatch:
 
 env:
-  # 6.11+ draws macOS 26's progress bars; 6.8 draws none
-  QT_VERSION: '6.11.3'
+  # 6.10+ draws macOS 26's progress bars; 6.8 draws none. Don't go past 6.10 yet: from 6.11 Qt keeps
+  # its Windows packages in per-compiler folders, which aqt (3.3.0) can't find.
+  QT_VERSION: '6.10.3'
 
 jobs:
   build:
@@ -22,7 +23,7 @@ jobs:
             os: ubuntu-22.04
             cmake_args: -DBBINSTALLER_FUSION=ON
           # macOS picks its controls' look from the SDK the app links against, so build with the
-          # newest one. The deployment target keeps older macOS working (13.0 is Qt 6.11's minimum).
+          # newest one. The deployment target keeps older macOS working (13.0 is Qt 6.10's minimum).
           - name: mac-arm64
             os: macos-26
             cmake_args: -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0
