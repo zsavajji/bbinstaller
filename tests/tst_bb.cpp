@@ -50,6 +50,32 @@ private slots:
         QCOMPARE(info.version, version);
         QCOMPARE(info.error, error);
     }
+
+    // Rows may only say "Installed" once the phone has answered status=success: it is still working until then.
+    void installReportsDoneAfterLastAnswer()
+    {
+        struct FakePhone : bb::Device {
+            using bb::Device::Device;
+            QStringList *log = nullptr;
+            QByteArray call(const QString &, const QByteArray *body, const QString &file, const std::function<void(qint64)> &) override
+            {
+                if (!file.isEmpty()) return "<UpdateProgress><Status>Success</Status></UpdateProgress>";
+                if (body && *body == "status=success") {
+                    *log << QStringLiteral("UpdateEnd");
+                    return "<UpdateEnd></UpdateEnd>";
+                }
+                return "<UpdateStart></UpdateStart>";
+            }
+        };
+        QStringList log;
+        FakePhone phone(bb::DeviceInfo{QStringLiteral("phone")});
+        phone.log = &log;
+        const QString bar = QFINDTESTDATA("data/app-stored.bar");
+        phone.install({bar, bar}, [&](const bb::Progress &p) {
+            log << QString::number(p.index) + (p.phase == bb::Progress::Done ? " done" : p.phase == bb::Progress::Finish ? " finish" : " other");
+        });
+        QCOMPARE(log, QStringList({"0 finish", "1 finish", "UpdateEnd", "0 done", "1 done"}));
+    }
 };
 
 QTEST_GUILESS_MAIN(TestBb)

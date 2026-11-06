@@ -40,10 +40,18 @@ if(WIN32 OR APPLE)
 endif()
 set_target_properties(bbinstaller PROPERTIES
     MACOSX_BUNDLE_GUI_IDENTIFIER io.github.bbinstaller
+    MACOSX_BUNDLE_ICON_FILE bbinstaller.icns
     MACOSX_BUNDLE_BUNDLE_NAME "BB Installer"
     MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
     MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION}
 )
+
+if(APPLE)
+    set_source_files_properties(packaging/bbinstaller.icns PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+    target_sources(bbinstaller PRIVATE packaging/bbinstaller.icns)
+elseif(WIN32)
+    target_sources(bbinstaller PRIVATE packaging/bbinstaller.rc)
+endif()
 
 install(TARGETS bbinstaller BUNDLE DESTINATION . RUNTIME DESTINATION bin)
 if(UNIX AND NOT APPLE)
@@ -63,6 +71,8 @@ set(CPACK_DEBIAN_PACKAGE_SECTION utils)
 set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
 # Qt loads OpenSSL and its display plugins at runtime, so nothing links them: name them (t64 on newer releases)
 set(CPACK_DEBIAN_PACKAGE_DEPENDS "libssl3t64 | libssl3, qt6-qpa-plugins")
+# GNOME's file picker and fonts on GTK desktops
+set(CPACK_DEBIAN_PACKAGE_RECOMMENDS qt6-gtk-platformtheme)
 set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
 set(CPACK_RPM_PACKAGE_LICENSE GPL-3.0-only)
 set(CPACK_RPM_PACKAGE_GROUP Applications/System)

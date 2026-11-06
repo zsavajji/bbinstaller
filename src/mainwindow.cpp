@@ -7,6 +7,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMimeData>
+#include <QOperatingSystemVersion>
 #include <QPainter>
 #include <QPainterPath>
 #include <QProgressBar>
@@ -15,7 +16,6 @@
 #include <QSslSocket>
 #include <QStyle>
 #include <QTimer>
-#include <QToolButton>
 #include <QVBoxLayout>
 
 namespace {
@@ -35,12 +35,24 @@ protected:
     }
 };
 
+// macOS 26 and later: rounder controls (false on every other platform)
+bool roundedMac() { return QOperatingSystemVersion::current() >= QOperatingSystemVersion(QOperatingSystemVersion::MacOS, 26); }
+
 QString mb(qint64 n) { return QString::number(n / 1e6, 'f', 1) + QStringLiteral(" MB"); }
 
 bool isDark(const QPalette &p) { return p.color(QPalette::Window).lightness() < 128; }
 QColor mutedColor(const QPalette &p) { return p.color(QPalette::PlaceholderText); }
 QColor okColor(const QPalette &p) { return isDark(p) ? QColor(0x66bb6a) : QColor(0x2e7d32); }
 QColor errColor(const QPalette &p) { return isDark(p) ? QColor(0xef5350) : QColor(0xc62828); }
+// The system accent colour; distro Qt older than 6.6 only has the selection colour
+QColor accentColor(const QPalette &p)
+{
+#if QT_VERSION >= QT_VERSION_CHECK(6, 6, 0)
+    return p.color(QPalette::Accent);
+#else
+    return p.color(QPalette::Highlight);
+#endif
+}
 
 // Secondary text: the platform's smaller size
 void makeSmall(QWidget *w)
@@ -82,9 +94,10 @@ void DropArea::paintEvent(QPaintEvent *)
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
     QPainterPath path;
-    path.addRoundedRect(QRectF(rect()).adjusted(1, 1, -1, -1), 8, 8);
+    const qreal radius = roundedMac() ? 20 : 8;
+    path.addRoundedRect(QRectF(rect()).adjusted(1, 1, -1, -1), radius, radius);
     p.fillPath(path, palette().color(QPalette::Base));
-    QPen pen(m_highlighted ? palette().color(QPalette::Highlight) : palette().color(QPalette::Mid), m_highlighted ? 2 : 1.5, Qt::DashLine);
+    QPen pen(m_highlighted ? accentColor(palette()) : mutedColor(palette()), m_highlighted ? 2 : 1, Qt::DashLine);
     p.setPen(pen);
     p.drawPath(path);
 }
@@ -113,7 +126,6 @@ void DropArea::dropEvent(QDropEvent *e)
 
 AddTarget::AddTarget(QWidget *parent) : QWidget(parent)
 {
-    setCursor(Qt::PointingHandCursor);
     setMinimumHeight(48);
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 }
@@ -124,10 +136,17 @@ void AddTarget::setText(const QString &text)
     update();
 }
 
+void AddTarget::setClickable(bool on)
+{
+    m_clickable = on;
+    setCursor(on ? Qt::PointingHandCursor : Qt::ArrowCursor);
+    update();
+}
+
 void AddTarget::paintEvent(QPaintEvent *)
 {
     QPainter p(this);
-    p.setPen(m_hover ? palette().color(QPalette::Highlight) : mutedColor(palette()));
+    p.setPen(m_hover && m_clickable ? accentColor(palette()) : mutedColor(palette()));
     p.drawText(rect(), Qt::AlignCenter | Qt::TextWordWrap, m_text);
 }
 
@@ -147,7 +166,7 @@ void AddTarget::leaveEvent(QEvent *)
 
 void AddTarget::mouseReleaseEvent(QMouseEvent *e)
 {
-    if (e->button() == Qt::LeftButton && rect().contains(e->position().toPoint()) && onClicked) onClicked();
+    if (m_clickable && e->button() == Qt::LeftButton && rect().contains(e->position().toPoint()) && onClicked) onClicked();
 }
 
 StatusDot::StatusDot(QWidget *parent) : QWidget(parent)
@@ -204,7 +223,6 @@ MainWindow::MainWindow()
     scroll->setFrameShape(QFrame::NoFrame);
     scroll->viewport()->setAutoFillBackground(false);
     auto *content = new QWidget;
-    content->setAutoFillBackground(false);
     m_list = new QVBoxLayout(content);
     m_list->setContentsMargins(8, 8, 8, 8);
     m_list->setSpacing(6);
@@ -214,6 +232,7 @@ MainWindow::MainWindow()
     m_add->setSizePolicy(keep);
     m_list->addWidget(m_add, 1);
     scroll->setWidget(content);
+    content->setAutoFillBackground(false); // setWidget turns this on, and it would paint over the rounded corners
     dropLayout->addWidget(scroll);
     body->addWidget(m_drop, 1);
 
@@ -221,6 +240,13 @@ MainWindow::MainWindow()
     m_password = new QLineEdit;
     m_password->setEchoMode(QLineEdit::Password);
     m_password->setPlaceholderText(QStringLiteral("Device password (if set)"));
+    // ponytail: Qt (seen up to 6.12) draws macOS 26+ text fields as a hard white rectangle; drop this once it draws them properly
+    if (roundedMac()) {
+        m_password->setAttribute(Qt::WA_MacShowFocusRect, false);
+        m_password->setStyleSheet(QStringLiteral(
+            "QLineEdit { border: 1px solid rgba(128, 128, 128, 0.45); border-radius: 8px; padding: 3px 7px; background: rgba(128, 128, 128, 0.12); }"
+            "QLineEdit:focus { border: 2px solid palette(accent); padding: 2px 6px; }"));
+    }
     m_install = new QPushButton(QStringLiteral("Install"));
     m_install->setObjectName(QStringLiteral("install"));
     m_install->setDefault(true);
@@ -235,14 +261,13 @@ MainWindow::MainWindow()
     body->addWidget(m_status);
 
     m_add->onClicked = [this] {
-        if (m_busy) return;
         const QStringList files = QFileDialog::getOpenFileNames(this, QString(), QString(), QStringLiteral("BlackBerry apps (*.bar)"));
         QList<bb::BarInfo> infos;
         for (const QString &f : files) infos << bb::barInfo(f);
         add(infos);
     };
-    // The whole empty part of the drop area is the click target; light the border up with it
-    m_add->onHover = [this](bool on) { m_drop->setHighlighted(on && !m_busy); };
+    // While nothing is listed the empty area is the click target; light the border up with it
+    m_add->onHover = [this](bool on) { m_drop->setHighlighted(on && m_bars.empty()); };
     connect(m_drop, &DropArea::filesDropped, this, [this](const QStringList &paths) {
         if (m_busy) return;
         QList<bb::BarInfo> infos;
@@ -306,7 +331,8 @@ void MainWindow::refresh()
     }
     m_install->setEnabled(!m_busy && d && !valid().isEmpty());
     m_add->setText(m_bars.empty() ? QStringLiteral("Drop .bar files here, or click to choose")
-                                  : QStringLiteral("+  Drop more .bar files, or click to add"));
+                                  : QStringLiteral("+  Drop more .bar files"));
+    m_add->setClickable(m_bars.empty());
     m_add->setVisible(!m_busy);
     m_password->setEnabled(!m_busy);
 }
@@ -331,11 +357,15 @@ void MainWindow::poll()
 void MainWindow::add(const QList<bb::BarInfo> &infos)
 {
     for (const bb::BarInfo &info : infos) {
-        if (std::any_of(m_bars.begin(), m_bars.end(), [&](const auto &b) { return b->info.path == info.path; })) continue;
+        // One row per app. Package-Version ends in the build number (1.53.1.128), so a rebuild counts as new, even at the same path.
+        QList<Bar *> rows;
+        for (const auto &b : m_bars)
+            if (b->info.path == info.path || b->info.name == info.name) rows << b.get();
+        if (std::any_of(rows.begin(), rows.end(), [&](Bar *b) { return b->info.name == info.name && b->info.version == info.version; })) continue;
+        for (Bar *b : rows) removeBar(b);
         auto bar = std::make_unique<Bar>();
         bar->info = info;
-        bar->el = new QFrame;
-        bar->el->setFrameShape(QFrame::StyledPanel);
+        bar->el = new QGroupBox;
         auto *grid = new QGridLayout(bar->el);
         grid->setContentsMargins(10, 8, 6, 8);
         grid->setHorizontalSpacing(10);
@@ -343,10 +373,12 @@ void MainWindow::add(const QList<bb::BarInfo> &infos)
         auto *name = new ElidedLabel(info.name);
         name->setToolTip(info.path);
         bar->version = new QLabel(info.version);
-        auto *remove = new QToolButton;
+        auto *remove = new QPushButton;
+        remove->setFlat(true);
+        remove->setFocusPolicy(Qt::TabFocus);
         remove->setIcon(style()->standardIcon(QStyle::SP_LineEditClearButton));
-        remove->setAutoRaise(true);
         remove->setToolTip(QStringLiteral("Remove"));
+        remove->setFixedSize(remove->iconSize() + QSize(8, 8));
         bar->detail = new QLabel(info.error.isEmpty() ? mb(info.size) : info.error);
         bar->detail->setWordWrap(true);
         makeSmall(bar->detail);
@@ -365,15 +397,22 @@ void MainWindow::add(const QList<bb::BarInfo> &infos)
         setTone(bar->detail, info.error.isEmpty() ? QStringLiteral("muted") : QStringLiteral("err"));
 
         Bar *raw = bar.get();
-        connect(remove, &QToolButton::clicked, this, [this, raw] {
+        connect(remove, &QPushButton::clicked, this, [this, raw] {
             if (m_busy) return;
-            raw->el->deleteLater();
-            m_bars.erase(std::find_if(m_bars.begin(), m_bars.end(), [&](const auto &b) { return b.get() == raw; }));
+            removeBar(raw);
             refresh();
         });
         m_bars.push_back(std::move(bar));
     }
+    // Rows just arrived: the area stopped being a click target while the mouse may still be on it
+    if (!m_bars.empty()) m_drop->setHighlighted(false);
     refresh();
+}
+
+void MainWindow::removeBar(Bar *bar)
+{
+    bar->el->deleteLater();
+    m_bars.erase(std::find_if(m_bars.begin(), m_bars.end(), [&](const auto &b) { return b.get() == bar; }));
 }
 
 void MainWindow::install()
@@ -381,7 +420,6 @@ void MainWindow::install()
     m_queue = valid();
     if (m_queue.isEmpty()) return;
     m_busy = true;
-    m_drop->setHighlighted(false);
     refresh();
     setStatus(QStringLiteral("Installing %1 app%2…").arg(m_queue.size()).arg(m_queue.size() > 1 ? QStringLiteral("s") : QString()));
     try {
@@ -392,9 +430,12 @@ void MainWindow::install()
         m_device->install(paths, [this](const bb::Progress &p) {
             Bar *bar = m_queue[p.index];
             bar->progress->show();
+            // The phone reports no percentage while finishing: a busy indicator instead
+            bar->progress->setRange(0, p.phase == bb::Progress::Finish ? 0 : 100);
             bar->progress->setValue(p.percent);
             bar->detail->setText(p.phase == bb::Progress::Upload    ? QStringLiteral("Sending… %1%").arg(p.percent)
                                  : p.phase == bb::Progress::Install ? QStringLiteral("Installing… %1%").arg(p.percent)
+                                 : p.phase == bb::Progress::Finish  ? QStringLiteral("Finishing on the phone…")
                                                                     : QStringLiteral("Installed"));
             if (p.phase == bb::Progress::Done) {
                 bar->done = true;
@@ -408,7 +449,10 @@ void MainWindow::install()
         // A wrong password costs an attempt: make the user retype before trying again
         if (e.wrongPassword) m_password->clear();
         for (Bar *b : m_queue)
-            if (!b->done) b->progress->hide();
+            if (!b->done) {
+                b->progress->hide();
+                b->detail->setText(mb(b->info.size));
+            }
     }
     m_busy = false;
     refresh();

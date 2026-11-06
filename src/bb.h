@@ -30,7 +30,7 @@ struct DeviceInfo {
 };
 
 struct Progress {
-    enum Phase { Upload, Install, Done };
+    enum Phase { Upload, Install, Finish, Done };
     int index;
     Phase phase;
     int percent;
@@ -44,14 +44,18 @@ std::optional<DeviceInfo> identify(QNetworkAccessManager &nam, const QString &ip
 class Device {
 public:
     explicit Device(DeviceInfo info) : m_info(std::move(info)) {}
+    virtual ~Device() = default;
     const DeviceInfo &info() const { return m_info; }
 
     void login(const QString &password);
     void install(const QStringList &files, const std::function<void(const Progress &)> &progress);
 
+protected:
+    // Virtual so the tests can stand in for the phone
+    virtual QByteArray call(const QString &page, const QByteArray *body = nullptr, const QString &file = {},
+                            const std::function<void(qint64)> &onSent = {});
+
 private:
-    QByteArray call(const QString &page, const QByteArray *body = nullptr, const QString &file = {},
-                    const std::function<void(qint64)> &onSent = {});
     QByteArray post(const QString &page, const QList<QPair<QString, QString>> &form = {});
 
     DeviceInfo m_info;

@@ -32,12 +32,15 @@ All of them follow the system light/dark setting.
 
 Install a package with `sudo apt install ./bbinstaller-*.deb` or `sudo dnf install ./bbinstaller-*.rpm`.
 
-The macOS build is ad-hoc signed, so the first launch needs right-click → **Open**.
+The macOS build needs macOS 13 or later and is ad-hoc signed, so the first launch needs right-click → **Open**.
 
 ## Building
 
 Needs CMake 3.21+, Qt 6.2+ (Widgets, Network; Test for the tests) and zlib.
 On Windows, Qt's bundled zlib is used.
+For the native look on macOS 26 and later, use Qt 6.11+ and the newest SDK: macOS picks its controls'
+look from the SDK an app links against, and older Qt doesn't draw their progress bars. Add
+`-DCMAKE_OSX_DEPLOYMENT_TARGET=13.0` to keep the result running on older macOS.
 
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release

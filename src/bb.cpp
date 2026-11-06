@@ -307,9 +307,11 @@ void Device::install(const QStringList &files, const std::function<void(const Pr
             wait.exec();
             xml = post(QStringLiteral("update.cgi"));
         }
-        progress({index, Progress::Done, 100});
+        progress({index, Progress::Finish, 100});
     }
+    // The phone is still working after each file's Success; only the answer to this (UpdateEnd) means it's finished
     post(QStringLiteral("update.cgi"), {{QStringLiteral("status"), QStringLiteral("success")}});
+    for (int index = 0; index < files.size(); index++) progress({index, Progress::Done, 100});
 }
 
 } // namespace bb

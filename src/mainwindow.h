@@ -36,11 +36,12 @@ private:
     bool m_highlighted = false;
 };
 
-// The empty part of the drop area: shows a hint and opens the file picker when clicked
+// The empty part of the drop area: shows a hint and, while nothing is listed, opens the file picker when clicked
 class AddTarget : public QWidget {
 public:
     explicit AddTarget(QWidget *parent = nullptr);
     void setText(const QString &text);
+    void setClickable(bool on);
     std::function<void()> onClicked;
     std::function<void(bool)> onHover;
 
@@ -53,6 +54,7 @@ protected:
 private:
     QString m_text;
     bool m_hover = false;
+    bool m_clickable = false;
 };
 
 class StatusDot : public QWidget {
@@ -78,7 +80,7 @@ protected:
 private:
     struct Bar {
         bb::BarInfo info;
-        QFrame *el;
+        QWidget *el;
         QLabel *version;
         QLabel *detail;
         QProgressBar *progress;
@@ -88,6 +90,7 @@ private:
     void poll();
     void refresh();
     void add(const QList<bb::BarInfo> &infos);
+    void removeBar(Bar *bar);
     void install();
     void setStatus(const QString &text, bool error = false);
     void applyColors();

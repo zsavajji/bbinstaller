@@ -8,7 +8,8 @@ on:
   workflow_dispatch:
 
 env:
-  QT_VERSION: '6.8.3'
+  # 6.11+ draws macOS 26's progress bars; 6.8 draws none
+  QT_VERSION: '6.11.3'
 
 jobs:
   build:
@@ -20,12 +21,14 @@ jobs:
           - name: linux-x86_64
             os: ubuntu-22.04
             cmake_args: -DBBINSTALLER_FUSION=ON
+          # macOS picks its controls' look from the SDK the app links against, so build with the
+          # newest one. The deployment target keeps older macOS working (13.0 is Qt 6.11's minimum).
           - name: mac-arm64
-            os: macos-14
-            cmake_args: -DCMAKE_OSX_ARCHITECTURES=arm64
+            os: macos-26
+            cmake_args: -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0
           - name: mac-x64
-            os: macos-15-intel
-            cmake_args: -DCMAKE_OSX_ARCHITECTURES=x86_64
+            os: macos-26-intel
+            cmake_args: -DCMAKE_OSX_ARCHITECTURES=x86_64 -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0
           - name: win-x64
             os: windows-2022
     name: ${{ matrix.name }}
