@@ -22,15 +22,10 @@ publishes them as release `v<version>` the first time that version appears: bump
 | Windows x64 | `.zip` (OpenSSL included) | Windows style |
 | macOS arm64 (Apple silicon) | `.dmg` | macOS style |
 | macOS x64 (Intel) | `.dmg` | macOS style |
-| Ubuntu 22.04 / 24.04, Debian 12 / 13 | `.deb` | Desktop theme (Breeze on KDE) |
-| Fedora 43 / 44 | `.rpm` | Desktop theme (Breeze on KDE) |
-| Any Linux x86_64 | AppImage | Fusion |
+| Linux x86_64 | AppImage | Fusion |
 
-The `.deb`/`.rpm` packages use the distro's own Qt, so they pick up the desktop's style and colours.
 The AppImage brings its own Qt and always uses Qt's Fusion style.
 All of them follow the system light/dark setting.
-
-Install a package with `sudo apt install ./bbinstaller-*.deb` or `sudo dnf install ./bbinstaller-*.rpm`.
 
 The macOS build needs macOS 13 or later and is ad-hoc signed, so the first launch needs right-click → **Open**.
 
@@ -49,7 +44,8 @@ ctest --test-dir build
 ```
 
 `-DBBINSTALLER_FUSION=ON` forces the Fusion style (used for the AppImage).
-`packaging/linux-package.sh <tag>` builds a `.deb` or `.rpm` inside a Debian/Ubuntu or Fedora system.
+`packaging/linux-package.sh <tag>` builds a `.deb` or `.rpm` against the distro's own Qt, so the desktop's
+theme applies. Run it inside a Debian/Ubuntu or Fedora system; CI doesn't build these.
 
 The phone only speaks TLS 1.0 with a self-signed certificate. The OpenSSL TLS backend is used
 whenever its libraries are present (on Windows they ship next to the exe). On macOS without
